@@ -2,11 +2,12 @@
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
-namespace IntroductionToRoslyn.CodeGeneration
+namespace IntroductionToRoslyn
 {
     public class AttributeUsageAnnotationGenerator
     {
-        public static AttributeListSyntax GenerateSyntax(AttributeTargets usageTarget)
+		// Generated using https://roslynquoter.azurewebsites.net/
+		public static AttributeListSyntax GenerateSyntax(AttributeTargets usageTarget)
         {
             return SyntaxFactory.AttributeList(
                 SyntaxFactory.SingletonSeparatedList<AttributeSyntax>(

@@ -1,9 +1,0 @@
-﻿<?xml version="1.0" encoding="UTF-8"?>
-<ExtensionModel>
-	<Runtime>
-	</Runtime>
-	
-    <Extension path = "/MonoDevelop/Ide/StartupHandlers">
-        <Class class = "IntroductionToRoslyn.StartupHandler"/>
-    </Extension>
-</ExtensionModel>

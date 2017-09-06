@@ -5,16 +5,10 @@ using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
-namespace IntroductionToRoslyn.Utilities
+namespace IntroductionToRoslyn
 {
     public static class SymbolHelper
     {
-		public static async Task<CompilationUnitSyntax> GetCSharpSyntaxRootAsync(this Document document, CancellationToken cancellationToken = default(CancellationToken))
-		{
-			var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
-			return (CompilationUnitSyntax)root;
-		}
-
 		public static bool DerivesFrom(ITypeSymbol currentType, ITypeSymbol expectedType)
 		{
 			if (currentType == null || expectedType == null)
