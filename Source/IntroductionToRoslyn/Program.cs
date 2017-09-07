@@ -12,166 +12,199 @@ namespace IntroductionToRoslyn.ConsoleSample
 {
     class MainClass
     {
-		public static AdhocWorkspace Workspace;
+        public static AdhocWorkspace Workspace;
 
         public static Solution Solution;
-		public static Project Project;
+        public static Project Project;
         public static Document Document;
 
-		public static Compilation Compilation;
+        public static Compilation Compilation;
         public static SemanticModel SemanticModel;
         public static SyntaxTree SyntaxTree;
         public static ClassDeclarationSyntax ClassDeclarationSyntax;
 
         public static void Main(string[] args)
         {
+            /// Step 1: Building the workspace
             BuildWorkspace();
 
-			LoadCodeIntoCompilation();
+            /// Step 2: Loading our code
+            LoadCodeIntoCompilation();
 
-			RetrieveCompilationState();
+            /// Step 3: Getting the current compilation state
+            RetrieveCompilationState();
 
+            /// Step 4: Exploring our codes syntax tree
             FindClassSyntax();
 
+            /// Step 5: Mutating our syntax tree
             TransformSyntax();
 
+            /// Step 6: Exporting our code
             ExportTransformedSyntax();
         }
 
-		private static void BuildWorkspace()
-		{
-			Workspace = new AdhocWorkspace();
+        private static void BuildWorkspace()
+        {
+            // Firstly, we create our workspace.
+            Workspace = new AdhocWorkspace();
 
-			Solution = Workspace.AddSolution(SolutionInfo.Create(SolutionId.CreateNewId(), VersionStamp.Default));
-			Project = Solution.AddProject("MyCodeBase", "MyCodeBase", LanguageNames.CSharp);
+            // Next, we create the solution and project that houses our source code.
+            // A solution and project map to the 
+            Solution = Workspace.AddSolution(SolutionInfo.Create(SolutionId.CreateNewId(), VersionStamp.Default));
+            Project = Solution.AddProject("MyCodeBase", "MyCodeBase", LanguageNames.CSharp);
 
-			LoadAssemblies();
+            // To load the assemblies for our stand-alone Roslyn based app,
+            // we are doing a little trick to find the essential assemblies.
+            // Here I'm scanning the app domain for mscorlib, System and System.Core 
+            var assemblies = AppDomain.CurrentDomain.GetAssemblies();
 
-			Workspace.TryApplyChanges(Project.Solution);
+            var mscorlib = assemblies.FirstOrDefault(a => a.GetName().Name == "mscorlib");
+            var system = assemblies.FirstOrDefault(a => a.GetName().Name == "System");
+            var systemCore = assemblies.FirstOrDefault(a => a.GetName().Name == "System.Core");
 
-			Solution = Project.Solution;
-		}
-
-		private static void LoadAssemblies()
-		{
-			var assemblies = AppDomain.CurrentDomain.GetAssemblies();
-
-			var mscorlib = assemblies.FirstOrDefault(a => a.GetName().Name == "mscorlib");
-			var system = assemblies.FirstOrDefault(a => a.GetName().Name == "System");
-			var systemCore = assemblies.FirstOrDefault(a => a.GetName().Name == "System.Core");
-
+            // As Roslyns solution and project model is immutable, each time we mutate the Project we
+            // need to then use the result for future operations.
             Project = Project.AddMetadataReference(MetadataReference.CreateFromFile(mscorlib.Location));
-			Project = Project.AddMetadataReference(MetadataReference.CreateFromFile(system.Location));
-			Project = Project.AddMetadataReference(MetadataReference.CreateFromFile(systemCore.Location));
-		}
+            Project = Project.AddMetadataReference(MetadataReference.CreateFromFile(system.Location));
+            Project = Project.AddMetadataReference(MetadataReference.CreateFromFile(systemCore.Location));
 
-        private static void LoadCodeIntoCompilation()
-		{
-            string code = ReadResourceContent(Assembly.GetExecutingAssembly(), "IntroductionToRoslyn.Resources.MyCustomAttribute.cs");
-
-            var doc = Project.AddDocument("MyCustomAttribute.cs", code);
-
-            Project = doc.Project;
-            Document = doc;
-
-            Workspace.TryApplyChanges(Project.Solution);
+            // Lastly, let's set the apps solution to the newly mutated solution that contains the project
+            // which references our core assemblies.
             Solution = Project.Solution;
+
+            // Finally, we commit our mutated solution back to the workspace.
+            Workspace.TryApplyChanges(Project.Solution);
         }
 
-		private static void RetrieveCompilationState()
-		{
-			SyntaxTree = Document.GetSyntaxTreeAsync().Result;
-			Compilation = Project.GetCompilationAsync().Result;
-			SemanticModel = Compilation.GetSemanticModel(SyntaxTree);
-		}
+        private static void LoadCodeIntoCompilation()
+        {
+            string code = ReadResourceContent(Assembly.GetExecutingAssembly(), "IntroductionToRoslyn.Resources.MyCustomAttribute.cs");
 
-		private static void FindClassSyntax()
-		{
-			var walker = new ClassDeclarationSyntaxWalker();
+            // Add code to a compilation is as simple as using AddDocument
+            // This:
+            //  - Creates a new document in the project.
+            //  - Readies it for parsing into a SyntaxTree.
+            //  - Readies it for parsing into a SyntaxTree.
+            Document = Project.AddDocument("MyCustomAttribute.cs", code);
 
-			walker.Visit(SyntaxTree.GetRoot());
+            // Because of Roslyns immutable project model, we need to store our changes back up
+            Project = Document.Project;
+            Solution = Project.Solution;
 
-			var classDeclaration = walker.ClassDeclaration;
-			if (classDeclaration == null)
-			{
-				return;
-			}
+            // Commit the mutated solution back into the 
+            Workspace.TryApplyChanges(Project.Solution);
+        }
 
-			var baseList = classDeclaration.BaseList;
-			if (baseList == null || !baseList.Types.Any())
-			{
-				return;
-			}
+        private static void RetrieveCompilationState()
+        {
+            // Retrieve the compilation, aka the semantic state, for the project.
+            // We can use this to resolve symbol information about syntax later on.
+            Compilation = Project.GetCompilationAsync().Result;
 
-			var attributeType = SemanticModel.Compilation.GetTypeByMetadataName("System.Attribute");
+            // Next, grab our documents SyntaxTree. 
+            // We can use this to explore the stucture of our code.
+            SyntaxTree = Document.GetSyntaxTreeAsync().Result;
 
-			bool derivesFromAttribute = false;
-			foreach (var type in baseList.Types)
-			{
-				var baseType = type as SimpleBaseTypeSyntax;
+            // Using our documents SyntaxTree and the compilation, let's get the semantic model for our document.
+            // We can use the semantic model to perform semantic analysis
+            SemanticModel = Compilation.GetSemanticModel(SyntaxTree);
+        }
 
-				if (baseType != null)
-				{
-					var typeInfo = SemanticModel.GetTypeInfo(baseType.Type);
+        private static void FindClassSyntax()
+        {
+            // Firstly, let's use a SyntaxWalker to explore the SyntaxTree for our document.
+            // We want to locate the first class declaration in the document so we can perform
+            // some semantic analysis on it later.
+            var walker = new ClassDeclarationSyntaxWalker();
 
-					if (typeInfo.Type != null
-						&& typeInfo.Type.TypeKind != TypeKind.Interface
-						&& SymbolHelper.DerivesFrom(typeInfo.Type, attributeType))
-					{
-						derivesFromAttribute = true;
-						break;
-					}
-				}
-			}
+            walker.Visit(SyntaxTree.GetRoot());
 
-			if (!derivesFromAttribute)
-			{
-				return;
-			}
+            var classDeclaration = walker.ClassDeclaration;
+            if (classDeclaration == null)
+            {
+                return;
+            }
 
-			ClassDeclarationSyntax = classDeclaration;
-		}
+            var baseList = classDeclaration.BaseList;
+            if (baseList == null || !baseList.Types.Any())
+            {
+                return;
+            }
+
+            // Here we use the Compilation to resolve the type symbol for 'System.Attribute'
+            // As we loaded a reference to the 'System' assembly to our project, the 'System.Attribute'
+            // type will exist in the semantic state of the compilation.
+            var attributeType = Compilation.GetTypeByMetadataName("System.Attribute");
+
+            // 
+            bool derivesFromAttribute = false;
+            foreach (var type in baseList.Types)
+            {
+                var baseType = type as SimpleBaseTypeSyntax;
+
+                if (baseType != null)
+                {
+                    var typeInfo = SemanticModel.GetTypeInfo(baseType.Type);
+
+                    if (typeInfo.Type != null
+                        && typeInfo.Type.TypeKind != TypeKind.Interface
+                        && SymbolHelper.DerivesFrom(typeInfo.Type, attributeType))
+                    {
+                        derivesFromAttribute = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!derivesFromAttribute)
+            {
+                return;
+            }
+
+            ClassDeclarationSyntax = classDeclaration;
+        }
 
         public static void TransformSyntax()
         {
-			var rootNode = SyntaxTree.GetRoot();
+            var rootNode = SyntaxTree.GetRoot();
 
             var attrbuteList = AttributeUsageAnnotationGenerator.GenerateSyntax(AttributeTargets.Class);
 
-            var newClassDeclaration = ClassDeclarationSyntax.AddAttributeLists(attrbuteList);
+            var newSyntax = ClassDeclarationSyntax.AddAttributeLists(attrbuteList);
 
-			var newRoot = rootNode.ReplaceNode(ClassDeclarationSyntax, newClassDeclaration);
+            var newRoot = rootNode.ReplaceNode(ClassDeclarationSyntax, newSyntax);
 
             Document = Document.WithSyntaxRoot(newRoot);
 
             SyntaxTree = Document.GetSyntaxTreeAsync().Result;
         }
 
-		private static void ExportTransformedSyntax()
-		{
-			var rootNode = SyntaxTree.GetRoot();
-			var formattedSyntax = Formatter.Format(rootNode, Workspace);
+        private static void ExportTransformedSyntax()
+        {
+            var rootNode = SyntaxTree.GetRoot();
+            var formattedSyntax = Formatter.Format(rootNode, Workspace);
 
-			Document = Document.WithSyntaxRoot(formattedSyntax);
+            Document = Document.WithSyntaxRoot(formattedSyntax);
 
-			// We can use the 
-			Document = Simplifier.ReduceAsync(Document).Result;
+            // We can use the 
+            Document = Simplifier.ReduceAsync(Document).Result;
 
-			var code = Document.GetSyntaxRootAsync().Result;
+            var code = Document.GetSyntaxRootAsync().Result;
 
-			string fileName = Path.Combine(System.Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "MyCustomAttribute.cs");
-			File.WriteAllText(fileName, code.ToString());
-		}
+            string fileName = Path.Combine(System.Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "MyCustomAttribute.cs");
+            File.WriteAllText(fileName, code.ToString());
+        }
 
         public static string ReadResourceContent(Assembly assembly, string resourceName)
-		{
-			using (var stream = assembly.GetManifestResourceStream(resourceName))
-			{
-				using (var reader = new StreamReader(stream))
-				{
-					return reader.ReadToEnd();
-				}
-			}
-		}
+        {
+            using (var stream = assembly.GetManifestResourceStream(resourceName))
+            {
+                using (var reader = new StreamReader(stream))
+                {
+                    return reader.ReadToEnd();
+                }
+            }
+        }
     }
 }
