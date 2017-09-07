@@ -19,8 +19,9 @@ namespace IntroductionToRoslyn.ConsoleSample
         public static Document Document;
 
         public static Compilation Compilation;
-        public static SemanticModel SemanticModel;
         public static SyntaxTree SyntaxTree;
+        public static SemanticModel SemanticModel;
+
         public static ClassDeclarationSyntax ClassDeclarationSyntax;
 
         public static void Main(string[] args)
@@ -28,19 +29,16 @@ namespace IntroductionToRoslyn.ConsoleSample
             /// Step 1: Building the workspace
             BuildWorkspace();
 
-            /// Step 2: Loading our code
-            LoadCodeIntoCompilation();
-
-            /// Step 3: Getting the current compilation state
+            /// Step 2: Getting the current compilation state
             RetrieveCompilationState();
 
-            /// Step 4: Exploring our codes syntax tree
+            /// Step 3: Exploring our codes syntax tree
             FindClassSyntax();
 
-            /// Step 5: Mutating our syntax tree
+            /// Step 4: Mutating our syntax tree
             TransformSyntax();
 
-            /// Step 6: Exporting our code
+            /// Step 5: Exporting our code
             ExportTransformedSyntax();
         }
 
@@ -73,26 +71,21 @@ namespace IntroductionToRoslyn.ConsoleSample
             // which references our core assemblies.
             Solution = Project.Solution;
 
-            // Finally, we commit our mutated solution back to the workspace.
-            Workspace.TryApplyChanges(Project.Solution);
-        }
+            const string ResourceId = "IntroductionToRoslyn.Resources.MyCustomAttribute.cs";
+            string code = ReadResourceContent(Assembly.GetExecutingAssembly(), ResourceId);
 
-        private static void LoadCodeIntoCompilation()
-        {
-            string code = ReadResourceContent(Assembly.GetExecutingAssembly(), "IntroductionToRoslyn.Resources.MyCustomAttribute.cs");
-
-            // Add code to a compilation is as simple as using AddDocument
+            // Adding code to a compilation is as simple as using AddDocument
             // This:
             //  - Creates a new document in the project.
             //  - Readies it for parsing into a SyntaxTree.
-            //  - Readies it for parsing into a SyntaxTree.
+            //  - Consumes it and loads its symbols into the semantic model.
             Document = Project.AddDocument("MyCustomAttribute.cs", code);
 
             // Because of Roslyns immutable project model, we need to store our changes back up
             Project = Document.Project;
             Solution = Project.Solution;
 
-            // Commit the mutated solution back into the 
+            // Finally, we commit our mutated solution back to the workspace.
             Workspace.TryApplyChanges(Project.Solution);
         }
 
@@ -167,33 +160,42 @@ namespace IntroductionToRoslyn.ConsoleSample
 
         public static void TransformSyntax()
         {
+            // We start our syntax generation by finding the root of our syntax tree.
+            // We will use this later to replace the existing class declaration with a new one.
             var rootNode = SyntaxTree.GetRoot();
 
+            // Here we are creating a new AttributeListSyntax by using a helper class.
+            // This helper encapsulates the attribute list syntax generation code for reuse.
+            // Generated using https://roslynquoter.azurewebsites.net/
             var attrbuteList = AttributeUsageAnnotationGenerator.GenerateSyntax(AttributeTargets.Class);
 
+            // We mutate our existing class declaration by adding the new attribute list syntax.
             var newSyntax = ClassDeclarationSyntax.AddAttributeLists(attrbuteList);
 
-            var newRoot = rootNode.ReplaceNode(ClassDeclarationSyntax, newSyntax);
+            // Next, we replace the old class declaration in the current syntax root node.
+            // This creates a new, mutated root node that we will need to apply back onto our document.
+            var mutatedRoot = rootNode.ReplaceNode(ClassDeclarationSyntax, newSyntax);
 
-            Document = Document.WithSyntaxRoot(newRoot);
+            // Before we change the original document, we use the formatter to correct whitespace
+            // and apply user specified formatting conventions.
+            var formattedSyntax = Formatter.Format(mutatedRoot, Workspace);
 
+            // Lastly, we apply the new syntax node onto the original document.
+            Document = Document.WithSyntaxRoot(formattedSyntax);
             SyntaxTree = Document.GetSyntaxTreeAsync().Result;
         }
 
         private static void ExportTransformedSyntax()
         {
-            var rootNode = SyntaxTree.GetRoot();
-            var formattedSyntax = Formatter.Format(rootNode, Workspace);
+            // Because the SyntaxTree is full-fideltiy, generating the string representation of the code
+            // is as simple as calling '.ToString()'!
+            var code = SyntaxTree.ToString();
 
-            Document = Document.WithSyntaxRoot(formattedSyntax);
+            string folder = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+            string filePath = Path.Combine(folder, "MyCustomAttribute.cs");
 
-            // We can use the 
-            Document = Simplifier.ReduceAsync(Document).Result;
-
-            var code = Document.GetSyntaxRootAsync().Result;
-
-            string fileName = Path.Combine(System.Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "MyCustomAttribute.cs");
-            File.WriteAllText(fileName, code.ToString());
+            // To export our new code, we can just write it to the file system.
+            File.WriteAllText(filePath, code);
         }
 
         public static string ReadResourceContent(Assembly assembly, string resourceName)
